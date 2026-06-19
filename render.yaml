@@ -1,0 +1,16 @@
+# Render Blueprint. Можно создать сервис автоматически из этого файла
+# (New + → Blueprint), либо настроить вручную как Web Service.
+services:
+  - type: web
+    name: tg-bot-starter
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false          # задаётся вручную в дашборде Render
+      - key: WEBHOOK_SECRET
+        generateValue: true  # Render сгенерирует случайный секрет
+      - key: MODE
+        value: webhook
