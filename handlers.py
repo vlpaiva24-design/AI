@@ -55,6 +55,7 @@ async def cmd_help(message: Message) -> None:
         "🔎 искать в интернете и читать страницы\n"
         "🐍 выполнять Python-код (расчёты, обработка данных)\n\n"
         "Помню контекст беседы (до перезапуска сервиса).\n"
+        "/usage — расход токенов и примерная стоимость\n"
         "/reset — очистить память диалога."
     )
 
@@ -62,6 +63,14 @@ async def cmd_help(message: Message) -> None:
 @router.message(Command("ping"))
 async def cmd_ping(message: Message) -> None:
     await message.answer("pong ✅")
+
+
+@router.message(Command("usage"))
+async def cmd_usage(message: Message) -> None:
+    user_id = message.from_user.id if message.from_user else 0
+    if not _is_allowed(user_id):
+        return
+    await message.answer(assistant.usage_text(user_id))
 
 
 @router.message(Command("reset"))

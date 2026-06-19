@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
 
-SYSTEM_PROMPT = (
+BASE_SYSTEM_PROMPT = (
     "Ты — личный агент-ассистент Владимира, доступный через Telegram. "
     "Отвечай дружелюбно, по делу и кратко, если не просят развёрнуто. "
     "У тебя есть инструменты: поиск в интернете (web_search), чтение страниц "
@@ -22,9 +22,54 @@ SYSTEM_PROMPT = (
     "Пиши на языке пользователя."
 )
 
+# Цены за миллион токенов (вход, выход) по моделям.
+_PRICES = {
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
+}
+
 # Память диалога в оперативной памяти: user_id -> список сообщений.
 # Внимание: на бесплатном/перезапускаемом Render история обнуляется.
 _history: dict[int, list[dict]] = {}
+
+# Счётчик токенов: user_id -> {"input": N, "output": M}.
+_usage: dict[int, dict[str, int]] = {}
+
+
+def _cost(input_tokens: int, output_tokens: int) -> float:
+    in_price, out_price = _PRICES.get(config.ANTHROPIC_MODEL, (3.0, 15.0))
+    return input_tokens / 1_000_000 * in_price + output_tokens / 1_000_000 * out_price
+
+
+def _build_system(user_id: int) -> str:
+    """Системный промпт со встроенным счётчиком токенов."""
+    u = _usage.get(user_id, {"input": 0, "output": 0})
+    total = u["input"] + u["output"]
+    cost = _cost(u["input"], u["output"])
+    return (
+        BASE_SYSTEM_PROMPT
+        + "\n\nСЧЁТЧИК ТОКЕНОВ (с момента запуска сервиса): "
+        + f"вход {u['input']}, выход {u['output']}, всего {total}. "
+        + f"Примерная стоимость ${cost:.4f} (модель {config.ANTHROPIC_MODEL}). "
+        + "Если пользователь спросит про токены, расход или стоимость — "
+        + "назови эти числа. Учти: они не включают текущий запрос."
+    )
+
+
+def usage_text(user_id: int) -> str:
+    """Готовая сводка для команды /usage."""
+    u = _usage.get(user_id, {"input": 0, "output": 0})
+    total = u["input"] + u["output"]
+    cost = _cost(u["input"], u["output"])
+    return (
+        "📊 Расход токенов (с момента запуска сервиса):\n"
+        f"• вход: {u['input']}\n"
+        f"• выход: {u['output']}\n"
+        f"• всего: {total}\n"
+        f"• примерная стоимость: ${cost:.4f}\n"
+        f"• модель: {config.ANTHROPIC_MODEL}"
+    )
 
 MAX_MESSAGES = 30      # сколько элементов истории держать
 MAX_TOOL_ROUNDS = 8    # предохранитель от бесконечного цикла инструментов
@@ -52,10 +97,15 @@ async def ask(user_id: int, text: str) -> str:
         response = await client.messages.create(
             model=config.ANTHROPIC_MODEL,
             max_tokens=2000,
-            system=SYSTEM_PROMPT,
+            system=_build_system(user_id),
             tools=tools.TOOLS,
             messages=history,
         )
+        # Учитываем израсходованные токены.
+        u = _usage.setdefault(user_id, {"input": 0, "output": 0})
+        u["input"] += response.usage.input_tokens
+        u["output"] += response.usage.output_tokens
+
         # Сохраняем ответ модели (может содержать запросы на инструменты).
         history.append({"role": "assistant", "content": response.content})
 
