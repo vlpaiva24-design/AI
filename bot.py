@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher
 from aiohttp import web
 
 import config
+import db
 from handlers import router
 
 logging.basicConfig(level=logging.INFO)
@@ -18,11 +19,33 @@ def build_dispatcher() -> Dispatcher:
     return dp
 
 
+async def reminder_loop(bot: Bot) -> None:
+    """Каждые 30 секунд проверяет БД и отправляет сработавшие напоминания."""
+    logger.info("Цикл напоминаний запущен")
+    while True:
+        try:
+            for r in await db.get_due_reminders():
+                try:
+                    await bot.send_message(
+                        r["chat_id"], f"⏰ Напоминание: {r['text']}"
+                    )
+                finally:
+                    await db.mark_sent(r["id"])
+        except Exception:  # noqa: BLE001
+            logger.exception("Ошибка в цикле напоминаний")
+        await asyncio.sleep(30)
+
+
 async def run_polling() -> None:
     """Локальный режим: бот сам опрашивает Telegram."""
     bot = Bot(token=config.BOT_TOKEN)
     dp = build_dispatcher()
-    # На всякий случай убираем webhook, чтобы polling не конфликтовал.
+
+    if config.HAS_DB:
+        await db.init()
+        asyncio.create_task(reminder_loop(bot))
+        logger.info("База данных подключена")
+
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("Запуск в режиме POLLING")
     await dp.start_polling(bot)
@@ -37,6 +60,10 @@ def run_webhook() -> None:
     webhook_url = f"{config.RENDER_EXTERNAL_URL}{config.WEBHOOK_PATH}"
 
     async def on_startup(app: web.Application) -> None:
+        if config.HAS_DB:
+            await db.init()
+            app["reminder_task"] = asyncio.create_task(reminder_loop(bot))
+            logger.info("База данных подключена")
         await bot.set_webhook(
             url=webhook_url,
             secret_token=config.WEBHOOK_SECRET,
@@ -45,7 +72,6 @@ def run_webhook() -> None:
         logger.info("Webhook установлен: %s", webhook_url)
 
     app = web.Application()
-    # Простой health-check, чтобы Render видел, что сервис живой.
     app.router.add_get("/", lambda _req: web.Response(text="OK"))
 
     SimpleRequestHandler(

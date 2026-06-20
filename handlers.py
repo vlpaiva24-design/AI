@@ -41,8 +41,8 @@ async def cmd_start(message: Message) -> None:
         return
     await message.answer(
         "Привет, Владимир! 👋 Я твой агент на базе Claude.\n\n"
-        "Умею искать в интернете, читать страницы и выполнять Python-код — "
-        "просто опиши задачу.\n"
+        "Умею искать в интернете, выполнять Python-код, запоминать важное "
+        "и ставить напоминания — просто опиши задачу.\n"
         "/reset — забыть контекст\n"
         "/help — подробнее"
     )
@@ -53,10 +53,11 @@ async def cmd_help(message: Message) -> None:
     await message.answer(
         "Я личный агент на Claude. Помимо обычного диалога умею:\n"
         "🔎 искать в интернете и читать страницы\n"
-        "🐍 выполнять Python-код (расчёты, обработка данных)\n\n"
-        "Помню контекст беседы (до перезапуска сервиса).\n"
+        "🐍 выполнять Python-код (расчёты, обработка данных)\n"
+        "🧠 запоминать факты о тебе надолго\n"
+        "⏰ ставить напоминания и писать тебе вовремя\n\n"
         "/usage — расход токенов и примерная стоимость\n"
-        "/reset — очистить память диалога."
+        "/reset — очистить контекст текущего диалога."
     )
 
 
@@ -103,7 +104,7 @@ async def chat(message: Message) -> None:
     await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
 
     try:
-        answer = await assistant.ask(user_id, message.text)
+        answer = await assistant.ask(user_id, message.chat.id, message.text)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ошибка при обращении к Claude")
         await message.answer(f"⚠️ Ошибка при обращении к модели: {exc}")

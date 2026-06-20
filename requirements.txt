@@ -4,3 +4,4 @@ python-dotenv==1.0.1
 anthropic>=0.39,<1
 ddgs>=6.0
 beautifulsoup4>=4.12
+asyncpg>=0.29

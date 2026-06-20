@@ -13,6 +13,14 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 # Модель Claude. По умолчанию Sonnet — баланс качества и цены.
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6").strip()
 
+# Строка подключения к PostgreSQL (Render выдаёт как DATABASE_URL).
+# Если пусто — память и напоминания отключены, бот работает как раньше.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+HAS_DB = bool(DATABASE_URL)
+
+# Часовой пояс пользователя — для напоминаний и текущего времени.
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Moscow").strip()
+
 # Telegram ID единственного разрешённого пользователя.
 # Если пусто — бот в режиме настройки: подскажет каждому его ID.
 _allowed = os.getenv("ALLOWED_USER_ID", "").strip()
