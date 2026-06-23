@@ -79,7 +79,7 @@ async def cmd_reset(message: Message) -> None:
     user_id = message.from_user.id if message.from_user else 0
     if not _is_allowed(user_id):
         return
-    assistant.reset(user_id)
+    await assistant.reset(user_id)
     await message.answer("Память диалога очищена 🧹")
 
 

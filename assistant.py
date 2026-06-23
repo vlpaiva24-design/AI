@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
 client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
 
 BASE_SYSTEM_PROMPT = (
-    "Ты — личный агент-ассистент Владимира, доступный через Telegram. "
+    "Тебя зовут Анна. Ты — личная ассистентка Владимира (женского рода: "
+    "говори о себе в женском роде, например «я поняла», «я сделала»), "
+    "доступная через Telegram. "
     "Отвечай дружелюбно, по делу и кратко, если не просят развёрнуто. "
     "У тебя есть инструменты: поиск в интернете (web_search), чтение страниц "
     "(fetch_url), запуск Python-кода (run_python). "
@@ -93,6 +95,7 @@ _history: dict[int, list[dict]] = {}
 _usage: dict[int, dict[str, int]] = {}
 
 MAX_MESSAGES = 30
+MAX_DB_MESSAGES = 30
 MAX_TOOL_ROUNDS = 8
 
 
@@ -199,10 +202,18 @@ def _trim(history: list[dict]) -> None:
 
 
 async def ask(user_id: int, chat_id: int, text: str) -> str:
-    history = _history.setdefault(user_id, [])
+    if config.HAS_DB:
+        history = [
+            {"role": role, "content": content}
+            for role, content in await db.get_recent_messages(user_id, MAX_DB_MESSAGES)
+        ]
+    else:
+        history = _history.setdefault(user_id, [])
+        _trim(history)
     history.append({"role": "user", "content": text})
-    _trim(history)
 
+    answer = "(пустой ответ)"
+    too_many = True
     for _ in range(MAX_TOOL_ROUNDS):
         response = await client.messages.create(
             model=config.ANTHROPIC_MODEL,
@@ -220,8 +231,9 @@ async def ask(user_id: int, chat_id: int, text: str) -> str:
         if response.stop_reason != "tool_use":
             answer = "".join(
                 b.text for b in response.content if b.type == "text"
-            ).strip()
-            return answer or "(пустой ответ)"
+            ).strip() or "(пустой ответ)"
+            too_many = False
+            break
 
         tool_results = []
         for block in response.content:
@@ -239,8 +251,24 @@ async def ask(user_id: int, chat_id: int, text: str) -> str:
                 )
         history.append({"role": "user", "content": tool_results})
 
-    return "Слишком много шагов с инструментами — останавливаюсь. Уточни задачу?"
+    if too_many:
+        answer = "Слишком много шагов с инструментами. Уточни задачу?"
+
+    # сохраняем чистые текстовые реплики в базу (постоянная память)
+    if config.HAS_DB:
+        try:
+            await db.add_message(user_id, "user", text)
+            await db.add_message(user_id, "assistant", answer)
+        except Exception:  # noqa: BLE001
+            logger.exception("Не удалось сохранить историю диалога")
+
+    return answer
 
 
-def reset(user_id: int) -> None:
+async def reset(user_id: int) -> None:
     _history.pop(user_id, None)
+    if config.HAS_DB:
+        try:
+            await db.clear_messages(user_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("Не удалось очистить историю диалога")

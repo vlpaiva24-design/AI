@@ -24,6 +24,17 @@ async def init() -> None:
         )
         await conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS conversation (
+                id         SERIAL PRIMARY KEY,
+                user_id    BIGINT NOT NULL,
+                role       TEXT   NOT NULL,
+                content    TEXT   NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            );
+            """
+        )
+        await conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS reminders (
                 id         SERIAL PRIMARY KEY,
                 user_id    BIGINT NOT NULL,
@@ -106,3 +117,34 @@ async def mark_sent(reminder_id: int) -> None:
         await conn.execute(
             "UPDATE reminders SET sent = TRUE WHERE id = $1", reminder_id
         )
+
+
+# --- История диалога (постоянная) -----------------------------------------
+async def add_message(user_id: int, role: str, content: str) -> None:
+    async with _pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO conversation (user_id, role, content) VALUES ($1, $2, $3)",
+            user_id,
+            role,
+            content,
+        )
+
+
+async def get_recent_messages(user_id: int, limit: int) -> list[tuple[str, str]]:
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT role, content FROM conversation WHERE user_id = $1 "
+            "ORDER BY id DESC LIMIT $2",
+            user_id,
+            limit,
+        )
+    rows = list(reversed(rows))
+    # история должна начинаться с реплики пользователя
+    while rows and rows[0]["role"] != "user":
+        rows.pop(0)
+    return [(r["role"], r["content"]) for r in rows]
+
+
+async def clear_messages(user_id: int) -> None:
+    async with _pool.acquire() as conn:
+        await conn.execute("DELETE FROM conversation WHERE user_id = $1", user_id)
