@@ -8,6 +8,7 @@ import anthropic
 
 import config
 import db
+import devtools
 import tools
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,18 @@ MEMORY_PROMPT = (
     "контекст, проекты) — сохраняй через remember. "
     "Когда просят напомнить — ставь напоминание через set_reminder, "
     "вычисляя момент времени относительно текущего времени из этого промпта."
+)
+
+DEV_PROMPT = (
+    " Ты умеешь писать и публиковать код. У тебя есть инструменты shell, "
+    "write_file и read_file, рабочая папка на сервере и настроенный git с авторизацией. "
+    "Чтобы сделать и опубликовать проект: склонируй нужный репозиторий "
+    "(git clone https://github.com/ВЛАДЕЛЕЦ/РЕПО.git), создай или поправь файлы "
+    "через write_file, затем git add, commit и push — деплой на хостинге "
+    "произойдёт автоматически по пушу. После публикации пришли ссылку на результат. "
+    "Если не знаешь имя репозитория — спроси у пользователя. "
+    "Никогда не выводи токены и секреты. Не удаляй чужие файлы без необходимости. "
+    "Действуй пошагово и проверяй вывод команд."
 )
 
 # Инструменты памяти/напоминаний (доступны только при подключённой БД).
@@ -100,7 +113,10 @@ MAX_TOOL_ROUNDS = 8
 
 
 def _all_tools() -> list[dict]:
-    return tools.TOOLS + (MEMORY_TOOLS if config.HAS_DB else [])
+    extra = list(MEMORY_TOOLS) if config.HAS_DB else []
+    if config.HAS_GIT:
+        extra += devtools.DEV_TOOLS
+    return tools.TOOLS + extra
 
 
 def _cost(input_tokens: int, output_tokens: int) -> float:
@@ -127,6 +143,8 @@ async def _build_system(user_id: int) -> str:
 
     if config.HAS_DB:
         parts[0] += MEMORY_PROMPT
+    if config.HAS_GIT:
+        parts[0] += DEV_PROMPT
         now = datetime.now(ZoneInfo(config.TIMEZONE))
         parts.append(
             f"Текущее время: {now:%Y-%m-%d %H:%M} "
@@ -167,6 +185,9 @@ async def _dispatch(name: str, tool_input: dict, user_id: int, chat_id: int) -> 
     # Безсостояночные инструменты — в отдельном потоке.
     if name in ("web_search", "fetch_url", "run_python"):
         return await asyncio.to_thread(tools.run_tool, name, tool_input)
+
+    if name in ("shell", "write_file", "read_file"):
+        return await asyncio.to_thread(devtools.run_tool, name, tool_input)
 
     # Инструменты с БД — асинхронно.
     if name == "remember":

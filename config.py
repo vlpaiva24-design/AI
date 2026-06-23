@@ -21,6 +21,12 @@ HAS_DB = bool(DATABASE_URL)
 # Часовой пояс пользователя — для напоминаний и текущего времени.
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Moscow").strip()
 
+# GitHub-токен для инструментов разработчика (clone/push). Если пусто — режим кодера выключен.
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
+HAS_GIT = bool(GITHUB_TOKEN)
+# Репозиторий по умолчанию для сайтов (необязательно).
+DEFAULT_REPO = os.getenv("DEFAULT_REPO", "").strip()
+
 # Telegram ID единственного разрешённого пользователя.
 # Если пусто — бот в режиме настройки: подскажет каждому его ID.
 _allowed = os.getenv("ALLOWED_USER_ID", "").strip()
