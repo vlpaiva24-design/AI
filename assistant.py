@@ -271,7 +271,7 @@ async def ask(user_id: int, chat_id: int, text: str) -> str:
     for _ in range(MAX_TOOL_ROUNDS):
         response = await client.messages.create(
             model=config.ANTHROPIC_MODEL,
-            max_tokens=4096,
+            max_tokens=8192,
             system=await _build_system(user_id),
             tools=_all_tools(),
             messages=history,
@@ -282,25 +282,13 @@ async def ask(user_id: int, chat_id: int, text: str) -> str:
 
         history.append({"role": "assistant", "content": response.content})
 
-        if response.stop_reason != "tool_use":
-            text_out = "".join(
-                b.text for b in response.content if b.type == "text"
-            ).strip()
-            if text_out:
-                answer = text_out
-                too_many = False
-                break
-            # Модель завершила ход без текста — подтолкнуть довести задачу до конца.
-            history.append({
-                "role": "user",
-                "content": "Продолжи и доведи задачу до конца (создай файлы, "
-                "сделай git push). Когда закончишь, напиши краткий итог и ссылку.",
-            })
-            continue
+        tool_uses = [b for b in response.content if b.type == "tool_use"]
 
-        tool_results = []
-        for block in response.content:
-            if block.type == "tool_use":
+        # Любой tool_use ОБЯЗАН получить tool_result, иначе следующий запрос упадёт
+        # (даже если ход оборван по лимиту токенов).
+        if tool_uses:
+            tool_results = []
+            for block in tool_uses:
                 logger.info("Инструмент: %s, ввод: %s", block.name, block.input)
                 result = await _dispatch(
                     block.name, dict(block.input), user_id, chat_id
@@ -312,7 +300,23 @@ async def ask(user_id: int, chat_id: int, text: str) -> str:
                         "content": str(result),
                     }
                 )
-        history.append({"role": "user", "content": tool_results})
+            history.append({"role": "user", "content": tool_results})
+            continue
+
+        # Инструментов в ответе нет — это финальный ответ.
+        text_out = "".join(
+            b.text for b in response.content if b.type == "text"
+        ).strip()
+        if text_out:
+            answer = text_out
+            too_many = False
+            break
+        # Пустой ход без текста и без инструментов — подтолкнуть.
+        history.append({
+            "role": "user",
+            "content": "Продолжи и доведи задачу до конца (создай файлы, сделай "
+            "git push). Когда закончишь, напиши краткий итог и ссылку.",
+        })
 
     if too_many:
         answer = "Слишком много шагов с инструментами. Уточни задачу?"
