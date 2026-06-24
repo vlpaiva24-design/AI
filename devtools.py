@@ -11,30 +11,50 @@ import subprocess
 import config
 
 WORKSPACE = "/tmp/agent_ws"
+GIT_HOME = "/tmp/agent_home"  # гарантированно записываемый HOME для git-конфига
 _git_ready = False
 
 
 def _ensure_workspace() -> None:
     os.makedirs(WORKSPACE, exist_ok=True)
+    os.makedirs(GIT_HOME, exist_ok=True)
+
+
+def _env() -> dict:
+    """Окружение для shell/git: записываемый HOME и запрет интерактивных запросов."""
+    e = os.environ.copy()
+    e["HOME"] = GIT_HOME
+    e["GIT_TERMINAL_PROMPT"] = "0"  # git не зависает в ожидании логина/пароля
+    e["GIT_ASKPASS"] = "true"
+    return e
 
 
 def _setup_git() -> None:
-    """Один раз настраивает git-авторизацию из токена."""
+    """Один раз настраивает git: имя, и автоподстановку токена в github-ссылки."""
     global _git_ready
     if _git_ready or not config.GITHUB_TOKEN:
         return
-    subprocess.run(["git", "config", "--global", "user.name", "Anna Bot"], check=False)
+    _ensure_workspace()
+    env = _env()
     subprocess.run(
-        ["git", "config", "--global", "user.email", "anna-bot@users.noreply.github.com"],
-        check=False,
+        ["git", "config", "--global", "user.name", "Anna Bot"], env=env, check=False
     )
     subprocess.run(
-        ["git", "config", "--global", "credential.helper", "store"], check=False
+        ["git", "config", "--global", "user.email",
+         "anna-bot@users.noreply.github.com"],
+        env=env, check=False,
     )
-    cred_path = os.path.expanduser("~/.git-credentials")
-    with open(cred_path, "w", encoding="utf-8") as f:
-        f.write(f"https://x-access-token:{config.GITHUB_TOKEN}@github.com\n")
-    os.chmod(cred_path, 0o600)
+    # Любой https://github.com/... автоматически идёт с токеном — и clone, и push.
+    # Для fine-grained PAT правильный формат — токен как username.
+    subprocess.run(
+        ["git", "config", "--global",
+         f"url.https://{config.GITHUB_TOKEN}@github.com/.insteadOf",
+         "https://github.com/"],
+        env=env, check=False,
+    )
+    subprocess.run(
+        ["git", "config", "--global", "safe.directory", "*"], env=env, check=False
+    )
     _git_ready = True
 
 
@@ -45,7 +65,7 @@ def _mask(text: str) -> str:
 
 
 # --- реализация ------------------------------------------------------------
-def shell(command: str, timeout: int = 120) -> str:
+def shell(command: str, timeout: int = 90) -> str:
     _ensure_workspace()
     _setup_git()
     try:
@@ -56,6 +76,7 @@ def shell(command: str, timeout: int = 120) -> str:
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=_env(),
         )
     except subprocess.TimeoutExpired:
         return f"Ошибка: команда выполнялась дольше {timeout} секунд и была прервана."
@@ -97,8 +118,9 @@ DEV_TOOLS = [
         "name": "shell",
         "description": (
             "Выполнить shell-команду в рабочей папке на сервере "
-            "(git, ls, cat, npm и т.п.). Возвращает код возврата и вывод. "
-            "Через неё клонируешь репозитории, коммитишь и пушишь."
+            "(git, ls, cat и т.п.). Возвращает код возврата и вывод. "
+            "Через неё клонируешь репозитории, коммитишь и пушишь. "
+            "git авторизован автоматически, логин/пароль вводить не нужно."
         ),
         "input_schema": {
             "type": "object",
@@ -111,7 +133,7 @@ DEV_TOOLS = [
         "description": (
             "Записать (создать или перезаписать) файл в рабочей папке. "
             "Удобнее для больших файлов, чем echo через shell. "
-            "path — путь относительно рабочей папки (например repo/index.html)."
+            "path — путь относительно рабочей папки (например anna-web/index.html)."
         ),
         "input_schema": {
             "type": "object",
