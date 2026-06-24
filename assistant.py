@@ -164,12 +164,31 @@ async def _build_system(user_id: int) -> str:
 
     if config.HAS_GIT:
         parts[0] += DEV_PROMPT
-        if config.SITE_URL:
+        if config.DEFAULT_REPO:
+            repo_dir = config.DEFAULT_REPO.rstrip("/").split("/")[-1]
+            if repo_dir.endswith(".git"):
+                repo_dir = repo_dir[:-4]
+            link = config.SITE_URL or "(адрес сайта уточни у пользователя)"
             parts.append(
-                "Живой адрес опубликованного сайта (репозиторий anna-web): "
-                + config.SITE_URL
-                + " . После успешного git push давай пользователю именно эту "
-                "ссылку как адрес готового сайта (деплой занимает около минуты)."
+                "ПУБЛИКАЦИЯ САЙТОВ. Когда тебя просят сделать или изменить "
+                "лендинг/сайт, действуй сама, НЕ спрашивая git-команды и имя "
+                "репозитория. По умолчанию публикуй в репозиторий "
+                f"{config.DEFAULT_REPO}. Алгоритм за один заход: "
+                f"1) если папки {repo_dir} ещё нет — склонируй: "
+                f"git clone {config.DEFAULT_REPO}; иначе зайди в неё и git pull. "
+                f"2) создай или замени {repo_dir}/index.html через write_file "
+                "(полноценный, красивый, самодостаточный HTML со встроенными стилями). "
+                f"3) опубликуй одной командой: cd {repo_dir} && git add -A && "
+                "git commit -m 'update site' && git push. "
+                f"4) в ответе дай пользователю готовую ссылку на сайт: {link} "
+                "(деплой занимает около минуты). "
+                "Если правка существующего сайта — сначала прочитай текущий "
+                f"{repo_dir}/index.html через read_file, потом меняй."
+            )
+        elif config.SITE_URL:
+            parts.append(
+                "Живой адрес опубликованного сайта: " + config.SITE_URL
+                + " . После успешного git push давай пользователю именно эту ссылку."
             )
 
     u = _usage.get(user_id, {"input": 0, "output": 0})
