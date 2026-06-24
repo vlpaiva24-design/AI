@@ -309,7 +309,8 @@ async def ask(user_id: int, chat_id: int, text: str) -> str:
         answer = "Слишком много шагов с инструментами. Уточни задачу?"
 
     # сохраняем чистые текстовые реплики в базу (постоянная память)
-    if config.HAS_DB:
+    junk = answer in ("(пустой ответ)", "Слишком много шагов с инструментами. Уточни задачу?")
+    if config.HAS_DB and not too_many and not junk:
         try:
             await db.add_message(user_id, "user", text)
             await db.add_message(user_id, "assistant", answer)
