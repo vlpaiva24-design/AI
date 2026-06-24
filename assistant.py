@@ -271,7 +271,7 @@ async def ask(user_id: int, chat_id: int, text: str) -> str:
     for _ in range(MAX_TOOL_ROUNDS):
         response = await client.messages.create(
             model=config.ANTHROPIC_MODEL,
-            max_tokens=2000,
+            max_tokens=4096,
             system=await _build_system(user_id),
             tools=_all_tools(),
             messages=history,
@@ -283,11 +283,20 @@ async def ask(user_id: int, chat_id: int, text: str) -> str:
         history.append({"role": "assistant", "content": response.content})
 
         if response.stop_reason != "tool_use":
-            answer = "".join(
+            text_out = "".join(
                 b.text for b in response.content if b.type == "text"
-            ).strip() or "(пустой ответ)"
-            too_many = False
-            break
+            ).strip()
+            if text_out:
+                answer = text_out
+                too_many = False
+                break
+            # Модель завершила ход без текста — подтолкнуть довести задачу до конца.
+            history.append({
+                "role": "user",
+                "content": "Продолжи и доведи задачу до конца (создай файлы, "
+                "сделай git push). Когда закончишь, напиши краткий итог и ссылку.",
+            })
+            continue
 
         tool_results = []
         for block in response.content:
