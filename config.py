@@ -26,6 +26,8 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
 HAS_GIT = bool(GITHUB_TOKEN)
 # Репозиторий по умолчанию для сайтов (необязательно).
 DEFAULT_REPO = os.getenv("DEFAULT_REPO", "").strip()
+# Живой адрес опубликованного статического сайта (Render Static Site).
+SITE_URL = os.getenv("SITE_URL", "").strip()
 
 # Telegram ID единственного разрешённого пользователя.
 # Если пусто — бот в режиме настройки: подскажет каждому его ID.

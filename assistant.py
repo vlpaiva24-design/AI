@@ -149,8 +149,6 @@ async def _build_system(user_id: int) -> str:
 
     if config.HAS_DB:
         parts[0] += MEMORY_PROMPT
-    if config.HAS_GIT:
-        parts[0] += DEV_PROMPT
         now = datetime.now(ZoneInfo(config.TIMEZONE))
         parts.append(
             f"Текущее время: {now:%Y-%m-%d %H:%M} "
@@ -163,6 +161,16 @@ async def _build_system(user_id: int) -> str:
                 parts.append("Что ты знаешь о пользователе:\n" + lines)
         except Exception:  # noqa: BLE001
             logger.exception("Не удалось прочитать память")
+
+    if config.HAS_GIT:
+        parts[0] += DEV_PROMPT
+        if config.SITE_URL:
+            parts.append(
+                "Живой адрес опубликованного сайта (репозиторий anna-web): "
+                + config.SITE_URL
+                + " . После успешного git push давай пользователю именно эту "
+                "ссылку как адрес готового сайта (деплой занимает около минуты)."
+            )
 
     u = _usage.get(user_id, {"input": 0, "output": 0})
     total = u["input"] + u["output"]
